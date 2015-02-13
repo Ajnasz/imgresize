@@ -9,24 +9,50 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"os"
 
 	"github.com/nfnt/resize"
 	// if you don't need to use jpeg.Encode, import like so:
 	// _ "image/jpeg"
 )
 
-func serveFile(w http.ResponseWriter, width, height uint) {
-	file, err := ioutil.ReadFile("kep.jpg")
+func getImageSize(r io.Reader) [2]int {
+	im, _, err := image.DecodeConfig(file)
+}
 
-	if err != nil {
-		log.Fatal(err)
-	}
+func resizeImage(file []byte, width, height uint) (image.Image, error) {
 
 	img, _, err := image.Decode(bytes.NewReader(file))
 
+	if err != nil {
+		return nil, err
+	}
+
 	newImage := resize.Resize(width, height, img, resize.Lanczos3)
 
-	err = jpeg.Encode(w, newImage, nil)
+	return newImage, err
+}
+
+func serveFile(w http.ResponseWriter, width, height uint) {
+	reader, err := os.Open("kep.jpg"); err != nil {
+		defer reader.Close()
+
+		getImageSize(reader)
+	}
+	file, err := ioutil.ReadFile("kep.jpg")
+
+	if err != nil {
+		serveErr(w, err)
+	} else {
+
+		image, err := resizeImage(file, width, height)
+
+		if err != nil {
+			serveErr(w, err)
+		} else {
+			jpeg.Encode(w, image, nil)
+		}
+	}
 }
 
 func serveErr(w http.ResponseWriter, err error) {

@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +17,26 @@ import (
 	// _ "image/jpeg"
 )
 
-func pickFile() (fn string, ok bool) {
+func isCached(fn string) bool {
+	f, err := os.Open("cache/" + fn)
+
+	if err != nil {
+		return false
+	}
+
+	defer f.Close()
+
+	fi, err := f.Stat()
+
+	if err != nil {
+		return false
+	}
+
+	mode := fi.Mode()
+	return mode.IsRegular()
+}
+
+func pickFileName() (fn string, ok bool) {
 	f, _ := ioutil.ReadDir("imgs")
 
 	if len(f) < 1 {
@@ -49,22 +69,21 @@ func bigFit(img image.Image, size int, filter imaging.ResampleFilter) *image.NRG
 	return imaging.Resize(img, newW, newH, filter)
 }
 
-func serveFile(w http.ResponseWriter, width, height int) {
+func getCachedName(fn string, width, height int) string {
+	return strconv.Itoa(width) + "_" + strconv.Itoa(height) + "_" + fn
+}
 
-	fn, ok := pickFile()
+func createCached(fn string, img *image.NRGBA) {
+	cacheFile, err := os.Create("cache/" + fn)
 
-	if !ok {
-		serveErr(w, errors.New("No file found"), 404)
-		return
+	if err == nil {
+		imaging.Encode(cacheFile, img, imaging.JPEG)
+	} else {
+		log.Println(err)
 	}
+}
 
-	file, err := imaging.Open("imgs/" + fn)
-
-	if err != nil {
-		serveErr(w, err, 404)
-		return
-	}
-
+func getCroppedImg(file image.Image, width, height int) *image.NRGBA {
 	var size int
 
 	if width > height {
@@ -76,7 +95,37 @@ func serveFile(w http.ResponseWriter, width, height int) {
 	resized := bigFit(file, size, imaging.Lanczos)
 	cropped := imaging.CropCenter(resized, width, height)
 
+	return cropped
+}
+
+func serveFile(w http.ResponseWriter, r *http.Request, width, height int) {
+
+	fn, ok := pickFileName()
+
+	if !ok {
+		serveErr(w, errors.New("No file found"), 404)
+		return
+	}
+
+	cachedName := getCachedName(fn, width, height)
+
+	if isCached(cachedName) {
+		log.Println("serve cached", "cache/"+cachedName)
+		http.ServeFile(w, r, "cache/"+cachedName)
+		return
+	}
+
+	file, err := imaging.Open("imgs/" + fn)
+
+	if err != nil {
+		serveErr(w, err, 404)
+		return
+	}
+
+	cropped := getCroppedImg(file, width, height)
+
 	imaging.Encode(w, cropped, imaging.JPEG)
+	createCached(cachedName, cropped)
 }
 
 func serveErr(w http.ResponseWriter, err error, status int) {
@@ -113,7 +162,7 @@ func (s ServeFastCGI) ImgHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		serveErr(w, err, 500)
 	} else {
-		serveFile(w, width, height)
+		serveFile(w, r, width, height)
 	}
 }
 

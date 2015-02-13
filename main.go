@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -17,8 +18,14 @@ import (
 	// _ "image/jpeg"
 )
 
-func isCached(fn string) bool {
-	f, err := os.Open("cache/" + fn)
+var imagesPath, cachePath string
+
+var minHeight, maxHeight, minWidth, maxWidth int
+
+var categories []string
+
+func isCached(category, fn string) bool {
+	f, err := os.Open(path.Join(cachePath, category, fn))
 
 	if err != nil {
 		return false
@@ -36,8 +43,10 @@ func isCached(fn string) bool {
 	return mode.IsRegular()
 }
 
-func pickFileName() (fn string, ok bool) {
-	f, _ := ioutil.ReadDir("imgs")
+func pickFileName(category string) (fn string, ok bool) {
+	f, _ := ioutil.ReadDir(path.Join(imagesPath, category))
+
+	log.Println(path.Join(imagesPath, category))
 
 	if len(f) < 1 {
 		return "", false
@@ -73,14 +82,16 @@ func getCachedName(fn string, width, height int) string {
 	return strconv.Itoa(width) + "_" + strconv.Itoa(height) + "_" + fn
 }
 
-func createCached(fn string, img *image.NRGBA) {
-	cacheFile, err := os.Create("cache/" + fn)
+func createCached(category, fn string, img *image.NRGBA) {
+	cacheFile, err := os.Create(path.Join(cachePath, category, fn))
 
 	if err == nil {
 		imaging.Encode(cacheFile, img, imaging.JPEG)
+		defer cacheFile.Close()
 	} else {
 		log.Println(err)
 	}
+
 }
 
 func getCroppedImg(file image.Image, width, height int, c chan *image.NRGBA) {
@@ -98,90 +109,152 @@ func getCroppedImg(file image.Image, width, height int, c chan *image.NRGBA) {
 	c <- cropped
 }
 
-func serveFile(w http.ResponseWriter, r *http.Request, width, height int) {
+func isValidCategory(category string) bool {
+	if category == "" {
+		return false
+	}
 
-	fn, ok := pickFileName()
+	for _, c := range categories {
+		if c == category {
+			return true
+		}
+	}
+
+	return false
+}
+
+func writeNoCacheHeader(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+}
+
+func serveFile(w http.ResponseWriter, r *http.Request, category string, width, height int) {
+	fn, ok := pickFileName(category)
 
 	if !ok {
-		serveErr(w, errors.New("No file found"), 404)
+		http.Error(w, errors.New("No file found").Error(), 404)
 		return
 	}
 
 	cachedName := getCachedName(fn, width, height)
 
-	if isCached(cachedName) {
-		log.Println("serve cached", "cache/"+cachedName)
-		http.ServeFile(w, r, "cache/"+cachedName)
+	if isCached(category, cachedName) {
+		log.Println("serve cached", cachePath, category, cachedName)
+		writeNoCacheHeader(w)
+		http.ServeFile(w, r, path.Join(cachePath, category, cachedName))
 		return
 	}
 
-	file, err := imaging.Open("imgs/" + fn)
+	file, err := imaging.Open(path.Join(imagesPath, category, fn))
 
 	if err != nil {
-		serveErr(w, err, 404)
+		http.Error(w, err.Error(), 404)
 		return
 	}
 
+	var cropped *image.NRGBA
 	channel := make(chan *image.NRGBA)
 
 	go getCroppedImg(file, width, height, channel)
-	var cropped *image.NRGBA
+
 	cropped = <-channel
 
+	writeNoCacheHeader(w)
 	imaging.Encode(w, cropped, imaging.JPEG)
+
 	log.Println(fn)
-	go createCached(cachedName, cropped)
+
+	go createCached(category, cachedName, cropped)
 }
 
-func serveErr(w http.ResponseWriter, err error, status int) {
-	http.Error(w, err.Error(), status)
-}
+func getWidthHeight(filePath []string) (width, height int, er error) {
+	var widthS, heightS string
 
-func getWidthHeight(path []string) (width, height int, er error) {
-	if len(path) != 4 {
+	if len(filePath) == 4 {
+		widthS = filePath[2]
+		heightS = filePath[3]
+	} else if len(filePath) == 3 {
+		widthS = filePath[1]
+		heightS = filePath[2]
+	} else {
 		return 0, 0, errors.New("Bad URL")
 	}
 
-	widthN, err := strconv.Atoi(path[2])
+	widthN, err := strconv.Atoi(widthS)
 
 	if err != nil {
 		return 0, 0, err
 	}
 
-	heightN, err := strconv.Atoi(path[3])
+	heightN, err := strconv.Atoi(heightS)
 
 	if err != nil {
 		return 0, 0, err
 	}
 
-	if widthN > 500 || heightN > 500 {
+	if widthN > maxWidth || heightN > maxHeight {
 		return 0, 0, errors.New("Size not allowed")
-	}
-	if widthN < 10 || heightN < 10 {
+	} else if widthN < minWidth || heightN < minHeight {
 		return 0, 0, errors.New("Size not allowed")
 	}
 
 	return widthN, heightN, nil
 }
 
-type ServeFastCGI struct{}
+func pickCategory() string {
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-func (s ServeFastCGI) ImgHandler(w http.ResponseWriter, r *http.Request) {
-	path := strings.Split(r.URL.Path, "/")
+	return categories[r.Intn(len(categories))]
+}
 
-	width, height, err := getWidthHeight(path)
+func getCategory(filePath []string) string {
+	filePathLen := len(filePath)
+
+	var output string
+
+	if filePathLen == 4 {
+		output = filePath[1]
+	} else if filePathLen == 3 {
+		output = pickCategory()
+	}
+
+	return output
+}
+
+func imgHandler(w http.ResponseWriter, r *http.Request) {
+	filePath := strings.Split(r.URL.Path, "/")
+
+	category := getCategory(filePath)
+
+	log.Println(category)
+
+	if !isValidCategory(category) {
+		http.Error(w, errors.New("Invalid category").Error(), 400)
+		return
+	}
+
+	width, height, err := getWidthHeight(filePath)
 
 	if err != nil {
-		serveErr(w, err, 500)
+		http.Error(w, err.Error(), 400)
 	} else {
-		serveFile(w, r, width, height)
+		serveFile(w, r, category, width, height)
 	}
 }
 
-func main() {
-	serveHandler := new(ServeFastCGI)
+func init() {
+	imagesPath = "imgs"
+	cachePath = "cache"
 
-	http.HandleFunc("/kitten/", serveHandler.ImgHandler)
+	categories = []string{"kitten"}
+
+	minHeight = 10
+	maxHeight = 500
+	minWidth = 10
+	maxWidth = 500
+}
+
+func main() {
+	http.HandleFunc("/", imgHandler)
 
 	log.Fatal(http.ListenAndServe(":8001", nil))
 }

@@ -138,7 +138,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 	if isCached(category, cachedName) {
 		writeNoCacheHeader(w)
 		http.ServeFile(w, r, path.Join(cachePath, category, cachedName))
-		log.Println("serve cached", category, cachedName, r.RemoteAddr)
+		log.Println("serve cached", category, cachedName, getRemoteAddr(r))
 		return
 	}
 
@@ -158,7 +158,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 
 	writeNoCacheHeader(w)
 	imaging.Encode(w, cropped, imaging.JPEG)
-	log.Println("serve", category, fn, r.RemoteAddr)
+	log.Println("serve", category, fn, getRemoteAddr(r))
 
 	go createCached(category, cachedName, cropped)
 }
@@ -239,6 +239,16 @@ func imgHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		serveFile(w, r, category, width, height)
 	}
+}
+
+func getRemoteAddr(r *http.Request) string {
+	forwarded := r.Header.Get("X-Forwarded-For")
+
+	if forwarded != "" {
+		return forwarded
+	}
+
+	return r.RemoteAddr
 }
 
 func init() {

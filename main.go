@@ -83,7 +83,7 @@ func createCached(fn string, img *image.NRGBA) {
 	}
 }
 
-func getCroppedImg(file image.Image, width, height int) *image.NRGBA {
+func getCroppedImg(file image.Image, width, height int, c chan *image.NRGBA) {
 	var size int
 
 	if width > height {
@@ -95,7 +95,7 @@ func getCroppedImg(file image.Image, width, height int) *image.NRGBA {
 	resized := bigFit(file, size, imaging.Lanczos)
 	cropped := imaging.CropCenter(resized, width, height)
 
-	return cropped
+	c <- cropped
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request, width, height int) {
@@ -122,10 +122,15 @@ func serveFile(w http.ResponseWriter, r *http.Request, width, height int) {
 		return
 	}
 
-	cropped := getCroppedImg(file, width, height)
+	channel := make(chan *image.NRGBA)
+
+	go getCroppedImg(file, width, height, channel)
+	var cropped *image.NRGBA
+	cropped = <-channel
 
 	imaging.Encode(w, cropped, imaging.JPEG)
-	createCached(cachedName, cropped)
+	log.Println(fn)
+	go createCached(cachedName, cropped)
 }
 
 func serveErr(w http.ResponseWriter, err error, status int) {
@@ -147,6 +152,13 @@ func getWidthHeight(path []string) (width, height int, er error) {
 
 	if err != nil {
 		return 0, 0, err
+	}
+
+	if widthN > 500 || heightN > 500 {
+		return 0, 0, errors.New("Size not allowed")
+	}
+	if widthN < 10 || heightN < 10 {
+		return 0, 0, errors.New("Size not allowed")
 	}
 
 	return widthN, heightN, nil

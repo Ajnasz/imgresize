@@ -46,8 +46,6 @@ func isCached(category, fn string) bool {
 func pickFileName(category string) (fn string, ok bool) {
 	f, _ := ioutil.ReadDir(path.Join(imagesPath, category))
 
-	log.Println(path.Join(imagesPath, category))
-
 	if len(f) < 1 {
 		return "", false
 	}
@@ -138,9 +136,9 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 	cachedName := getCachedName(fn, width, height)
 
 	if isCached(category, cachedName) {
-		log.Println("serve cached", cachePath, category, cachedName)
 		writeNoCacheHeader(w)
 		http.ServeFile(w, r, path.Join(cachePath, category, cachedName))
+		log.Println("serve cached", category, cachedName, r.RemoteAddr)
 		return
 	}
 
@@ -160,8 +158,7 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 
 	writeNoCacheHeader(w)
 	imaging.Encode(w, cropped, imaging.JPEG)
-
-	log.Println(fn)
+	log.Println("serve", category, fn, r.RemoteAddr)
 
 	go createCached(category, cachedName, cropped)
 }
@@ -229,8 +226,6 @@ func imgHandler(w http.ResponseWriter, r *http.Request) {
 	filePath := strings.Split(r.URL.Path, "/")
 
 	category := getCategory(filePath)
-
-	log.Println(category)
 
 	if !isValidCategory(category) {
 		http.Error(w, errors.New("Invalid category").Error(), 400)

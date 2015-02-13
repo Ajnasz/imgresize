@@ -79,7 +79,7 @@ func bigFit(img image.Image, size int, filter imaging.ResampleFilter) *image.NRG
 }
 
 func getCachedName(fn string, width, height int) string {
-	return strconv.Itoa(width) + "_" + strconv.Itoa(height) + "_" + fn
+	return strings.Join([]string{strconv.Itoa(width), strconv.Itoa(height), fn}, "_")
 }
 
 func createCached(category, fn string, img *image.NRGBA) {

@@ -251,16 +251,32 @@ func getRemoteAddr(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+func createDir(dirPath string) {
+	err := os.MkdirAll(dirPath, 0755)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func init() {
 	imagesPath = "imgs"
 	cachePath = "cache"
 
-	categories = []string{"kitten"}
+	categories = []string{
+		"kitten",
+		"nature",
+	}
 
 	minHeight = 10
 	maxHeight = 500
 	minWidth = 10
 	maxWidth = 500
+
+	for _, category := range categories {
+		dirPath := path.Join(cachePath, category)
+		createDir(dirPath)
+	}
 }
 
 func main() {

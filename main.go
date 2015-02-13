@@ -259,14 +259,23 @@ func createDir(dirPath string) {
 	}
 }
 
+func getCategories() []string {
+	f, _ := ioutil.ReadDir(path.Join(imagesPath))
+
+	output := make([]string, 1)
+
+	for _, folder := range f {
+		output = append(output, folder.Name())
+	}
+
+	return output
+}
+
 func init() {
 	imagesPath = "imgs"
 	cachePath = "cache"
 
-	categories = []string{
-		"kitten",
-		"nature",
-	}
+	categories = getCategories()
 
 	minHeight = 10
 	maxHeight = 500

@@ -166,6 +166,13 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 	go createCached(category, cachedName, cropped)
 }
 
+func isValidSize(width, height int) bool {
+	return width <= maxWidth &&
+		height <= maxHeight &&
+		width >= minWidth &&
+		height >= minHeight
+}
+
 func getWidthHeight(filePath []string) (width, height int, er error) {
 	var widthS, heightS string
 
@@ -191,9 +198,7 @@ func getWidthHeight(filePath []string) (width, height int, er error) {
 		return 0, 0, err
 	}
 
-	if widthN > maxWidth || heightN > maxHeight {
-		return 0, 0, errors.New("Size not allowed")
-	} else if widthN < minWidth || heightN < minHeight {
+	if !isValidSize(widthN, heightN) {
 		return 0, 0, errors.New("Size not allowed")
 	}
 

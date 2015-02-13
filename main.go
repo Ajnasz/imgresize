@@ -1,81 +1,126 @@
 package main
 
 import (
-	"bytes"
+	"errors"
 	"image"
-	"image/jpeg"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
-	"os"
+	"time"
 
-	"github.com/nfnt/resize"
+	"github.com/disintegration/imaging"
 	// if you don't need to use jpeg.Encode, import like so:
 	// _ "image/jpeg"
 )
 
-func getImageSize(r io.Reader) [2]int {
-	im, _, err := image.DecodeConfig(file)
-}
+func pickFile() (fn string, ok bool) {
+	f, _ := ioutil.ReadDir("imgs")
 
-func resizeImage(file []byte, width, height uint) (image.Image, error) {
-
-	img, _, err := image.Decode(bytes.NewReader(file))
-
-	if err != nil {
-		return nil, err
+	if len(f) < 1 {
+		return "", false
 	}
 
-	newImage := resize.Resize(width, height, img, resize.Lanczos3)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	return newImage, err
+	return f[r.Intn(len(f))].Name(), true
 }
 
-func serveFile(w http.ResponseWriter, width, height uint) {
-	reader, err := os.Open("kep.jpg"); err != nil {
-		defer reader.Close()
+func bigFit(img image.Image, size int, filter imaging.ResampleFilter) *image.NRGBA {
 
-		getImageSize(reader)
-	}
-	file, err := ioutil.ReadFile("kep.jpg")
+	srcBounds := img.Bounds()
+	srcW := srcBounds.Dx()
+	srcH := srcBounds.Dy()
 
-	if err != nil {
-		serveErr(w, err)
+	srcAspectRatio := float64(srcW) / float64(srcH)
+
+	var newW, newH int
+
+	if srcW < srcH {
+		newW = size
+		newH = int(float64(newW) / srcAspectRatio)
 	} else {
-
-		image, err := resizeImage(file, width, height)
-
-		if err != nil {
-			serveErr(w, err)
-		} else {
-			jpeg.Encode(w, image, nil)
-		}
+		newH = size
+		newW = int(float64(newH) * srcAspectRatio)
 	}
+
+	return imaging.Resize(img, newW, newH, filter)
 }
 
-func serveErr(w http.ResponseWriter, err error) {
-	http.Error(w, err.Error(), 500)
+func serveFile(w http.ResponseWriter, width, height int) {
+
+	fn, ok := pickFile()
+
+	if !ok {
+		serveErr(w, errors.New("No file found"), 404)
+		return
+	}
+
+	file, err := imaging.Open("imgs/" + fn)
+
+	if err != nil {
+		serveErr(w, err, 404)
+		return
+	}
+
+	var size int
+
+	if width > height {
+		size = width
+	} else {
+		size = height
+	}
+
+	resized := bigFit(file, size, imaging.Lanczos)
+	cropped := imaging.CropCenter(resized, width, height)
+
+	imaging.Encode(w, cropped, imaging.JPEG)
+}
+
+func serveErr(w http.ResponseWriter, err error, status int) {
+	http.Error(w, err.Error(), status)
+}
+
+func getWidthHeight(path []string) (width, height int, er error) {
+	if len(path) != 4 {
+		return 0, 0, errors.New("Bad URL")
+	}
+
+	widthN, err := strconv.Atoi(path[2])
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	heightN, err := strconv.Atoi(path[3])
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return widthN, heightN, nil
+}
+
+type ServeFastCGI struct{}
+
+func (s ServeFastCGI) ImgHandler(w http.ResponseWriter, r *http.Request) {
+	path := strings.Split(r.URL.Path, "/")
+
+	width, height, err := getWidthHeight(path)
+
+	if err != nil {
+		serveErr(w, err, 500)
+	} else {
+		serveFile(w, width, height)
+	}
 }
 
 func main() {
-	http.HandleFunc("/kitten/", func(w http.ResponseWriter, r *http.Request) {
-		log.Println(r.URL.Path)
-		path := strings.Split(r.URL.Path, "/")
+	serveHandler := new(ServeFastCGI)
 
-		width, err := strconv.ParseUint(path[2], 0, 64)
-		if err != nil {
-			serveErr(w, err)
-		}
-		height, err := strconv.ParseUint(path[3], 0, 64)
-
-		if err != nil {
-			serveErr(w, err)
-		} else {
-			serveFile(w, uint(width), uint(height))
-		}
-	})
+	http.HandleFunc("/kitten/", serveHandler.ImgHandler)
 
 	log.Fatal(http.ListenAndServe(":8001", nil))
 }

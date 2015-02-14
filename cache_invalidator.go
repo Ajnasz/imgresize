@@ -15,11 +15,10 @@ func keepResolution(width, height int) bool {
 }
 
 func isDeletable(fn string, modTime time.Time) bool {
-	dateLimit := time.Now()
-	dateLimit.Add(-time.Hour)
+	dateLimit := time.Now().Add(-time.Hour * 24)
 
 	if modTime.After(dateLimit) {
-		return true
+		return false
 	}
 
 	re := regexp.MustCompile("^(\\d+)+_(\\d+)")
@@ -71,6 +70,7 @@ func deleteCachedFiles(files []string) {
 }
 
 func scheduleFileDelete() {
+	deleteCachedFiles(getCachedFiles())
 	for {
 		select {
 		case <-time.After(time.Hour):

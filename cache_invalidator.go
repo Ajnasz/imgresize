@@ -73,7 +73,7 @@ func deleteCachedFiles(files []string) {
 func scheduleFileDelete() {
 	for {
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(time.Hour):
 			deleteCachedFiles(getCachedFiles())
 		}
 	}

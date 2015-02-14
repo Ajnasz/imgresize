@@ -105,6 +105,7 @@ func getCroppedImg(file image.Image, width, height int, c chan *image.NRGBA) {
 	cropped := imaging.CropCenter(resized, width, height)
 
 	c <- cropped
+	close(c)
 }
 
 func isValidCategory(category string) bool {

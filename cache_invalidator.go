@@ -18,11 +18,9 @@ func isDeletable(fn string, modTime time.Time) bool {
 	dateLimit := time.Now()
 	dateLimit.Add(-time.Hour)
 
-	/*
-		if modTime.After(dateLimit) {
-			return true
-		}
-	*/
+	if modTime.After(dateLimit) {
+		return true
+	}
 
 	re := regexp.MustCompile("^(\\d+)+_(\\d+)")
 

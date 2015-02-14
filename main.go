@@ -260,7 +260,7 @@ func createDir(dirPath string) {
 }
 
 func getCategories() []string {
-	f, _ := ioutil.ReadDir(path.Join(imagesPath))
+	f, _ := ioutil.ReadDir(imagesPath)
 
 	output := make([]string, 1)
 
@@ -290,6 +290,8 @@ func init() {
 
 func main() {
 	http.HandleFunc("/", imgHandler)
+
+	go scheduleFileDelete()
 
 	log.Fatal(http.ListenAndServe(":8001", nil))
 }

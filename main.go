@@ -25,22 +25,11 @@ var minHeight, maxHeight, minWidth, maxWidth int
 var categories []string
 
 func isCached(category, fn string) bool {
-	f, err := os.Open(path.Join(cachePath, category, fn))
-
-	if err != nil {
+	if _, err := os.Stat(path.Join(cachePath, category, fn)); os.IsNotExist(err) {
 		return false
 	}
 
-	defer f.Close()
-
-	fi, err := f.Stat()
-
-	if err != nil {
-		return false
-	}
-
-	mode := fi.Mode()
-	return mode.IsRegular()
+	return true
 }
 
 func pickFileName(category string) (fn string, ok bool) {

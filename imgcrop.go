@@ -74,6 +74,14 @@ func createCached(file string, img *image.NRGBA) {
 
 var chanslice map[string][]chan bool
 
+func fileServable(fn string) {
+	for _, listener := range chanslice[fn] {
+		listener <- true
+	}
+
+	chanslice[fn] = []chan bool{}
+}
+
 func createCropped(img *ImgForCrop) chan bool {
 	fn := getCachedPath(img.Category, img.CachedName)
 
@@ -88,18 +96,10 @@ func createCropped(img *ImgForCrop) chan bool {
 
 				createCached(fn, cropped)
 
-				for _, listener := range chanslice[fn] {
-					listener <- true
-				}
-
-				chanslice[fn] = []chan bool{}
+				fileServable(fn)
 			} else {
 				log.Println("File aready exists", fn)
-				for _, listener := range chanslice[fn] {
-					listener <- true
-				}
-
-				chanslice[fn] = []chan bool{}
+				fileServable(fn)
 			}
 		}()
 	}

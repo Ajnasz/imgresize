@@ -21,8 +21,6 @@ var imagesPath, cachePath string
 
 var minHeight, maxHeight, minWidth, maxWidth int
 
-var processingQueue map[string]int
-
 var categories []string
 
 func isCached(category, fn string) bool {
@@ -230,8 +228,6 @@ func init() {
 	maxHeight = 500
 	minWidth = 10
 	maxWidth = 500
-
-	processingQueue = make(map[string]int)
 
 	chanslice = make(map[string][]chan bool)
 

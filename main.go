@@ -283,5 +283,11 @@ func main() {
 
 	go scheduleFileDelete()
 
-	log.Fatal(http.ListenAndServe(":8001", nil))
+	var port = os.Getenv("PORT")
+
+	if port == "" {
+		port = "8001"
+	}
+
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

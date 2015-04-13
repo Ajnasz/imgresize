@@ -70,6 +70,7 @@ func deleteCachedFiles(files []string) {
 }
 
 func scheduleFileDelete() {
+	log.Println("Schedule file delete")
 	deleteCachedFiles(getCachedFiles())
 	for {
 		select {

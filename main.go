@@ -2,18 +2,17 @@ package main
 
 import (
 	"errors"
-	"image"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
+	// _ "net/http/pprof"
 	"os"
 	"path"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/disintegration/imaging"
 	// if you don't need to use jpeg.Encode, import like so:
 	// _ "image/jpeg"
 )
@@ -21,6 +20,8 @@ import (
 var imagesPath, cachePath string
 
 var minHeight, maxHeight, minWidth, maxWidth int
+
+var processingQueue map[string]int
 
 var categories []string
 
@@ -44,57 +45,8 @@ func pickFileName(category string) (fn string, ok bool) {
 	return f[r.Intn(len(f))].Name(), true
 }
 
-func bigFit(img image.Image, size int, filter imaging.ResampleFilter) *image.NRGBA {
-
-	srcBounds := img.Bounds()
-	srcW := srcBounds.Dx()
-	srcH := srcBounds.Dy()
-
-	srcAspectRatio := float64(srcW) / float64(srcH)
-
-	var newW, newH int
-
-	if srcW < srcH {
-		newW = size
-		newH = int(float64(newW) / srcAspectRatio)
-	} else {
-		newH = size
-		newW = int(float64(newH) * srcAspectRatio)
-	}
-
-	return imaging.Resize(img, newW, newH, filter)
-}
-
 func getCachedName(fn string, width, height int) string {
 	return strings.Join([]string{strconv.Itoa(width), strconv.Itoa(height), fn}, "_")
-}
-
-func createCached(category, fn string, img *image.NRGBA) {
-	cacheFile, err := os.Create(path.Join(cachePath, category, fn))
-
-	if err == nil {
-		imaging.Encode(cacheFile, img, imaging.JPEG)
-		defer cacheFile.Close()
-	} else {
-		log.Println(err)
-	}
-
-}
-
-func getCroppedImg(file image.Image, width, height int, c chan *image.NRGBA) {
-	var size int
-
-	if width > height {
-		size = width
-	} else {
-		size = height
-	}
-
-	resized := bigFit(file, size, imaging.Lanczos)
-	cropped := imaging.CropCenter(resized, width, height)
-
-	c <- cropped
-	close(c)
 }
 
 func isValidCategory(category string) bool {
@@ -111,12 +63,20 @@ func isValidCategory(category string) bool {
 	return false
 }
 
-func writeNoCacheHeader(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+type DeferredFileServe struct {
+	w *http.ResponseWriter
+	r *http.Request
+}
+
+func writeNoCacheHeader(w *http.ResponseWriter) {
+	writer := *w
+	writer.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 }
 
 func serveFile(w http.ResponseWriter, r *http.Request, category string, width, height int) {
 	fn, ok := pickFileName(category)
+
+	log.Println("request to", fn)
 
 	if !ok {
 		http.Error(w, errors.New("No file found").Error(), 404)
@@ -125,32 +85,31 @@ func serveFile(w http.ResponseWriter, r *http.Request, category string, width, h
 
 	cachedName := getCachedName(fn, width, height)
 
+	cachedPath := getCachedPath(category, cachedName)
+
 	if isCached(category, cachedName) {
-		writeNoCacheHeader(w)
-		http.ServeFile(w, r, path.Join(cachePath, category, cachedName))
+		// writeNoCacheHeader(&w)
 		log.Println("serve cached", category, cachedName, getRemoteAddr(r))
+		http.ServeFile(w, r, cachedPath)
 		return
 	}
 
-	file, err := imaging.Open(path.Join(imagesPath, category, fn))
+	filePath := path.Join(imagesPath, category, fn)
 
-	if err != nil {
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		http.Error(w, err.Error(), 404)
 		return
 	}
 
-	var cropped *image.NRGBA
-	channel := make(chan *image.NRGBA)
+	// log.Println("defer", category, cachedName, getRemoteAddr(r))
 
-	go getCroppedImg(file, width, height, channel)
+	c := createCropped(&ImgForCrop{filePath, cachedName, category, width, height})
 
-	cropped = <-channel
+	<-c
 
-	writeNoCacheHeader(w)
-	imaging.Encode(w, cropped, imaging.JPEG)
-	log.Println("serve", category, fn, getRemoteAddr(r))
-
-	go createCached(category, cachedName, cropped)
+	writeNoCacheHeader(&w)
+	http.ServeFile(w, r, cachedPath)
+	// log.Println("serve cached - after create", category, cachedName, getRemoteAddr(r))
 }
 
 func isValidSize(width, height int) bool {
@@ -271,6 +230,10 @@ func init() {
 	maxHeight = 500
 	minWidth = 10
 	maxWidth = 500
+
+	processingQueue = make(map[string]int)
+
+	chanslice = make(map[string][]chan bool)
 
 	for _, category := range categories {
 		dirPath := path.Join(cachePath, category)

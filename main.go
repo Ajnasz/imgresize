@@ -12,9 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	// if you don't need to use jpeg.Encode, import like so:
-	// _ "image/jpeg"
 )
 
 var imagesPath, cachePath string
@@ -218,6 +215,13 @@ func getCategories() []string {
 	return output
 }
 
+func createCategoryCacheDirs(categories []string) {
+	for _, category := range categories {
+		dirPath := path.Join(cachePath, category)
+		createDir(dirPath)
+	}
+}
+
 func init() {
 	imagesPath = "imgs"
 	cachePath = "cache"
@@ -231,10 +235,7 @@ func init() {
 
 	chanslice = make(map[string][]chan bool)
 
-	for _, category := range categories {
-		dirPath := path.Join(cachePath, category)
-		createDir(dirPath)
-	}
+	createCategoryCacheDirs(categories)
 }
 
 func main() {
